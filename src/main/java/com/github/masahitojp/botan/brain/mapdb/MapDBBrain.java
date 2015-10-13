@@ -1,96 +1,88 @@
 package com.github.masahitojp.botan.brain.mapdb;
 
 import com.github.masahitojp.botan.brain.BotanBrain;
+import com.github.masahitojp.botan.utils.BotanUtils;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.ConcurrentMap;
-import java.util.stream.Collectors;
+import java.io.*;
+import java.util.concurrent.*;
 
-
-@SuppressWarnings("unused")
 public class MapDBBrain implements BotanBrain {
-    private final String path;
-    private final String tableName;
-    private DB db;
-    private ConcurrentMap<ByteArrayWrapper, byte[]> data;
+    private static Logger log = LoggerFactory.getLogger(MapDBBrain.class);
+    private static String KEY = "botan:brain";
+    private final ConcurrentHashMap<String, String> data;
+    private final DB db;
+    private final ConcurrentMap<String, byte[]> inner;
+    private final ScheduledExecutorService service = Executors.newSingleThreadScheduledExecutor();
 
     @SuppressWarnings("unused")
     public MapDBBrain() {
-        this.path = Optional.ofNullable(System.getProperty("MAPDB_PATH")).orElse("./botan_map_db");
-        this.tableName = Optional.ofNullable(System.getProperty("MAPDB_TABLE_NAME")).orElse("botan");
+        this(
+                BotanUtils.envToOpt("MAPDB_PATH").orElse("./botan_map_db"),
+                BotanUtils.envToOpt("MAPDB_TABLE_NAME").orElse("botan")
+        );
     }
 
-    @SuppressWarnings("unused")
-    public MapDBBrain(String path, String tableName) {
-        this.path = path;
-        this.tableName = tableName;
-    }
-
-    @Override
-    public final Optional<byte[]> get(final byte[] key) {
-        return Optional.ofNullable(data.get(new ByteArrayWrapper(key)));
+    public MapDBBrain(final String path, final String tableName) {
+        data = new ConcurrentHashMap<>();
+        db = DBMaker.newFileDB(new File(path)).closeOnJvmShutdown().make();
+        inner = db.createHashMap(tableName).make();
     }
 
     @Override
-    public final Optional<byte[]> put(byte[] key, byte[] value) {
-        final Optional<byte[]> result = Optional.ofNullable(data.put(new ByteArrayWrapper(key), value));
-        db.commit();
-        return result;
-    }
-
-    @Override
-    public final Optional<byte[]> delete(byte[] key) {
-        final Optional<byte[]> result = Optional.ofNullable(data.remove(new ByteArrayWrapper(key)));
-        db.commit();
-        return result;
-    }
-
-    public final void deleteAll() {
-        for(final ByteArrayWrapper bw:data.keySet()) {
-            data.remove(bw);
-        }
-        db.commit();
-    }
-
-
-    @Override
-    public Set<byte[]> keys(byte[] startsWith) {
-        return this.data.keySet()
-                .stream()
-                .filter(key -> indexOf(key.getData(), startsWith) == 0)
-                .map(ByteArrayWrapper::getData)
-                .collect(Collectors.toSet());
-    }
-
-    private int indexOf(byte[] outerArray, byte[] smallerArray) {
-        for(int i = 0; i < outerArray.length - smallerArray.length+1; i++) {
-            boolean found = true;
-            for(int j = 0; j < smallerArray.length; j++) {
-                if (outerArray[i+j] != smallerArray[j]) {
-                    found = false;
-                    break;
-                }
-            }
-            if (found) return i;
-        }
-        return -1;
-    }
-
-    @Override
-    public void initialize() {
-        db = DBMaker.newFileDB(new File(path))
-                .transactionDisable()
-                .closeOnJvmShutdown()
-                .make();
-        data = db.getHashMap(tableName);
+    public final ConcurrentHashMap<String, String> getData() {
+        return data;
     }
 
     @Override
     public void beforeShutdown() {
+        service.shutdown();
         db.close();
     }
+
+    @Override
+    public void initialize() {
+
+        final byte[] a = inner.getOrDefault(KEY, new byte[]{});
+        if (a != null && a.length > 0) {
+            deserialize(a);
+        }
+
+        service.scheduleAtFixedRate(() -> {
+            final byte[] result = serialize();
+            if (result != null && result.length > 0) {
+                inner.put(KEY, result);
+            }
+            db.commit();
+        }, 5, 5, TimeUnit.SECONDS);
+    }
+
+    private byte[] serialize() {
+        try (
+                final ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                final ObjectOutputStream oos = new ObjectOutputStream(baos)
+        ) {
+            oos.writeObject(data);
+            oos.flush();
+            return baos.toByteArray();
+        } catch (final Exception e) {
+            log.warn("{}", e);
+        }
+        return null;
+    }
+
+    private void deserialize(final byte[] storedData) {
+        try {
+            ByteArrayInputStream bi = new ByteArrayInputStream(storedData);
+            ObjectInputStream si = new ObjectInputStream(bi);
+            final ConcurrentHashMap<String, String> d = (ConcurrentHashMap<String, String>) si.readObject();
+            d.forEach(data::put);
+        } catch (Exception e) {
+            log.warn("{}", e);
+        }
+    }
+
 }
