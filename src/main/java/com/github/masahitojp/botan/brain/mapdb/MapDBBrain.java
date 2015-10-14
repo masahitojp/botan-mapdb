@@ -29,7 +29,7 @@ public class MapDBBrain implements BotanBrain {
     public MapDBBrain(final String path, final String tableName) {
         data = new ConcurrentHashMap<>();
         db = DBMaker.newFileDB(new File(path)).closeOnJvmShutdown().make();
-        inner = db.createHashMap(tableName).make();
+        inner = db.getHashMap(tableName);
     }
 
     @Override
