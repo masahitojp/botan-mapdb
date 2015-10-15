@@ -8,6 +8,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.concurrent.*;
 
 public class MapDBBrain implements BotanBrain {
@@ -19,16 +22,22 @@ public class MapDBBrain implements BotanBrain {
     private final ScheduledExecutorService service = Executors.newSingleThreadScheduledExecutor();
 
     @SuppressWarnings("unused")
-    public MapDBBrain() {
+    public MapDBBrain() throws IOException {
         this(
                 BotanUtils.envToOpt("MAPDB_PATH").orElse("./botan_map_db"),
                 BotanUtils.envToOpt("MAPDB_TABLE_NAME").orElse("botan")
         );
     }
 
-    public MapDBBrain(final String path, final String tableName) {
+    public MapDBBrain(final String mapdbPath, final String tableName) throws IOException {
+        if (mapdbPath == null || mapdbPath.equals("")) throw new NullPointerException("MAPDB_PATH is not set");
+        if (tableName == null || tableName.equals("")) throw new NullPointerException("MAPDB_TABLE_NAME is not set");
+        final Path path = Paths.get(mapdbPath);
+
+        Files.createDirectories(path.getParent());
+
         data = new ConcurrentHashMap<>();
-        db = DBMaker.newFileDB(new File(path)).closeOnJvmShutdown().make();
+        db = DBMaker.newFileDB(path.toFile()).closeOnJvmShutdown().make();
         inner = db.getHashMap(tableName);
     }
 
