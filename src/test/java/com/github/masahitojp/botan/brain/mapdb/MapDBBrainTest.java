@@ -5,6 +5,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -18,7 +19,7 @@ public class MapDBBrainTest {
     private MapDBBrain data;
 
     @Before
-    public void startUp() {
+    public void startUp() throws IOException {
         data = new MapDBBrain();
         data.initialize();
     }

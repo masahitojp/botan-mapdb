@@ -11,6 +11,7 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.concurrent.*;
 
 public class MapDBBrain implements BotanBrain {
@@ -63,10 +64,12 @@ public class MapDBBrain implements BotanBrain {
         service.scheduleAtFixedRate(() -> {
             final byte[] result = serialize();
             if (result != null && result.length > 0) {
-                inner.put(KEY, result);
+                if (!Arrays.equals(inner.getOrDefault(KEY, new byte[]{}), result)) {
+                    inner.put(KEY, result);
+                    db.commit();
+                }
             }
-            db.commit();
-        }, 5, 5, TimeUnit.SECONDS);
+        }, 5, 30, TimeUnit.SECONDS);
     }
 
     private byte[] serialize() {
