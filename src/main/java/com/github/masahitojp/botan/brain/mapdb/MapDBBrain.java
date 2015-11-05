@@ -86,10 +86,12 @@ public class MapDBBrain implements BotanBrain {
         return null;
     }
 
+    @SuppressWarnings("unchecked")
     private void deserialize(final byte[] storedData) {
-        try {
-            ByteArrayInputStream bi = new ByteArrayInputStream(storedData);
-            ObjectInputStream si = new ObjectInputStream(bi);
+        try (
+                final ByteArrayInputStream bi = new ByteArrayInputStream(storedData);
+                final ObjectInputStream si = new ObjectInputStream(bi)
+        ) {
             final ConcurrentHashMap<String, String> d = (ConcurrentHashMap<String, String>) si.readObject();
             d.forEach(data::put);
         } catch (Exception e) {
